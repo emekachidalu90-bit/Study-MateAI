@@ -56,7 +56,7 @@ app.use("/api/quiz",  quizRoutes);
 app.use("/uploads",   express.static(uploadsDir));
 
 app.get("/healthz", (_req, res) =>
-  res.json({ ok: true, uptime: Math.round(process.uptime()), db: require("./utils/db").isConnected() ? "mongodb" : "memory" })
+  res.json({ ok: true, uptime: Math.round(process.uptime()), db: require("./utils/db").isConnected() ? "mongodb" : "memory", accounts: require("./utils/userStore").isSupabase() ? "supabase" : "memory" })
 );
 
 const clientDist = path.join(__dirname, "../client/dist");
