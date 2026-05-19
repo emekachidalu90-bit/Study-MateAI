@@ -1,18 +1,17 @@
 const passport   = require("passport");
 const { v4: uuidv4 } = require("uuid");
-const store      = require("./store");
+const userStore  = require("./userStore");
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3001";
 
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => {
-  const u = store.users.find(u => u.id === id);
-  done(null, u || false);
+    userStore.findById(id).then(u => done(null, u || false)).catch(err => done(err));
 });
 
 async function upsertOAuthUser({ provider, providerId, name, email, avatar }) {
-  let user = store.users.find(u => u.oauth?.[provider] === String(providerId));
-  if (!user && email) user = store.users.find(u => u.email === email);
+  let user = await userStore.findByOAuth(provider, providerId);
+  if (!user && email) user = await userStore.findByEmail(email);
 
   if (user) {
     if (!user.oauth) user.oauth = {};
@@ -35,10 +34,8 @@ async function upsertOAuthUser({ provider, providerId, name, email, avatar }) {
       lastLogin: new Date().toDateString(),
       createdAt: new Date().toISOString(),
     };
-    store.users.push(user);
   }
-  await store.save();
-  return user;
+  return await userStore.save(user);
 }
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {

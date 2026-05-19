@@ -3,7 +3,7 @@ const router     = express.Router();
 const bcrypt     = require("bcryptjs");
 const jwt        = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
-const store      = require("../utils/store");
+const userStore  = require("../utils/userStore");
 const passport   = require("../utils/passport");
 
 const JWT_SECRET = process.env.JWT_SECRET || "studymate_secret_2024";
@@ -31,7 +31,7 @@ router.post("/register", async (req, res) => {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: "All fields required" });
-    if (store.users.find(u => u.email === email))
+    if (await userStore.findByEmail(email))
       return res.status(400).json({ error: "Email already registered" });
 
     const hashed = await bcrypt.hash(password, 10);
@@ -42,8 +42,7 @@ router.post("/register", async (req, res) => {
       lastLogin: new Date().toDateString(),
       createdAt: new Date().toISOString(),
     };
-    store.users.push(user);
-    await store.save();
+    await userStore.save(user);
     console.log(`[auth] registered: ${email}`);
     res.json({ token: mintToken(user), user: safeUser(user) });
   } catch (err) {
@@ -56,7 +55,7 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = store.users.find(u => u.email === email);
+    const user = await userStore.findByEmail(email);
     if (!user) return res.status(400).json({ error: "No account found with that email" });
     if (!user.password) return res.status(400).json({ error: "This account uses social login — sign in with Google, GitHub, or Discord." });
 
@@ -68,7 +67,7 @@ router.post("/login", async (req, res) => {
     if (user.lastLogin !== today) {
       user.streak = user.lastLogin === yesterday ? (user.streak || 0) + 1 : 1;
       user.lastLogin = today;
-      await store.save();
+      await userStore.save(user);
     }
     console.log(`[auth] login: ${email}`);
     res.json({ token: mintToken(user), user: safeUser(user) });
@@ -79,8 +78,8 @@ router.post("/login", async (req, res) => {
 });
 
 // ── Me ──
-router.get("/me", require("../middleware/auth"), (req, res) => {
-  const user = store.users.find(u => u.id === req.user.id);
+router.get("/me", require("../middleware/auth"), async (req, res) => {
+  const user = await userStore.findById(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
   res.json(safeUser(user));
 });
