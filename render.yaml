@@ -12,10 +12,11 @@ services:
         value: 3001
       - key: GROQ_API_KEY
         sync: false
+      - key: MONGODB_URI
+        sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: BASE_URL
+        sync: false
       - key: CLIENT_URL
-        fromService:
-          type: web
-          name: studymate-ai
-          property: host
+        sync: false

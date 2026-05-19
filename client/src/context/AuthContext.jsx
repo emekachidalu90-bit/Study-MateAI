@@ -4,7 +4,7 @@ import api from "../utils/api";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -13,10 +13,7 @@ export function AuthProvider({ children }) {
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       api.get("/auth/me")
         .then(r => setUser(r.data))
-        .catch(() => {
-          localStorage.removeItem("sm_token");
-          delete api.defaults.headers.common["Authorization"];
-        })
+        .catch(() => { localStorage.removeItem("sm_token"); delete api.defaults.headers.common["Authorization"]; })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
@@ -45,20 +42,12 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
-  // Called by OAuthCallback after it stores the token
   const refreshUser = useCallback(async () => {
-    try {
-      const { data } = await api.get("/auth/me");
-      setUser(data);
-      return data;
-    } catch {
-      return null;
-    }
+    try { const { data } = await api.get("/auth/me"); setUser(data); return data; }
+    catch { return null; }
   }, []);
 
-  const updateUser = useCallback((updates) => {
-    setUser(prev => ({ ...prev, ...updates }));
-  }, []);
+  const updateUser = useCallback((updates) => setUser(p => ({ ...p, ...updates })), []);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, refreshUser }}>

@@ -33,7 +33,5 @@
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "engines": { "node": ">=18.0.0" }
 }
