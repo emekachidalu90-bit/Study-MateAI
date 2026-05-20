@@ -18,7 +18,7 @@ async function groqChat(messages, model = "llama3-8b-8192") {
 // ── Summarize ──
 router.post("/summarize/:noteId", auth, async (req, res) => {
   try {
-    const note = store.notes.find(n => n.id === req.params.noteId && n.userId === req.user.id);
+    const note = store.notes.find(n => n.id === req.params.noteId && n.user_id === req.user.id);
     if (!note) return res.status(404).json({ error: "Note not found" });
 
     const summary = await groqChat([
@@ -27,7 +27,7 @@ router.post("/summarize/:noteId", auth, async (req, res) => {
     ]);
     note.summary = summary;
     note.updatedAt = new Date().toISOString();
-    await store.save();
+    await store.saveNote(note);
     res.json({ summary });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -35,7 +35,7 @@ router.post("/summarize/:noteId", auth, async (req, res) => {
 // ── Flashcards ──
 router.post("/flashcards/:noteId", auth, async (req, res) => {
   try {
-    const note = store.notes.find(n => n.id === req.params.noteId && n.userId === req.user.id);
+    const note = store.notes.find(n => n.id === req.params.noteId && n.user_id === req.user.id);
     if (!note) return res.status(404).json({ error: "Note not found" });
 
     const count = req.body.count || 10;
@@ -52,7 +52,7 @@ router.post("/flashcards/:noteId", auth, async (req, res) => {
 
     note.flashcards = flashcards;
     note.updatedAt = new Date().toISOString();
-    await store.save();
+    await store.saveNote(note);
     res.json({ flashcards });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -128,7 +128,7 @@ router.post("/study-plan", auth, async (req, res) => {
 // ── Mind map (FIXED) ──
 router.post("/mindmap/:noteId", auth, async (req, res) => {
   try {
-    const note = store.notes.find(n => n.id === req.params.noteId && n.userId === req.user.id);
+    const note = store.notes.find(n => n.id === req.params.noteId && n.user_id === req.user.id);
     if (!note) return res.status(404).json({ error: "Note not found" });
 
     const raw = await groqChat([

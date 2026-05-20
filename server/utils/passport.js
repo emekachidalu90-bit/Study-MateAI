@@ -1,41 +1,47 @@
 const passport   = require("passport");
 const { v4: uuidv4 } = require("uuid");
-const userStore  = require("./userStore");
+const store      = require("./store");
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3001";
 
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => {
-    userStore.findById(id).then(u => done(null, u || false)).catch(err => done(err));
+  const u = store.users.find(u => u.id === id);
+  done(null, u || false);
 });
 
 async function upsertOAuthUser({ provider, providerId, name, email, avatar }) {
-  let user = await userStore.findByOAuth(provider, providerId);
-  if (!user && email) user = await userStore.findByEmail(email);
+  let user = store.users.find(u => u.oauth?.[provider] === String(providerId));
+  if (!user && email) user = store.users.find(u => u.email === email);
 
   if (user) {
     if (!user.oauth) user.oauth = {};
     user.oauth[provider] = String(providerId);
-    if (!user.avatarUrl && avatar) user.avatarUrl = avatar;
-    const today = new Date().toDateString();
+    if (!user.avatar_url && avatar) user.avatar_url = avatar;
+    const today     = new Date().toDateString();
     const yesterday = new Date(Date.now() - 86400000).toDateString();
-    if (user.lastLogin !== today) {
-      user.streak = user.lastLogin === yesterday ? (user.streak || 0) + 1 : 1;
-      user.lastLogin = today;
+    if (user.last_login !== today) {
+      user.streak    = user.last_login === yesterday ? (user.streak || 0) + 1 : 1;
+      user.last_login = today;
     }
   } else {
     user = {
-      id: uuidv4(), name: name || "StudyMate User",
-      email: email || null, password: null,
-      avatar: (name || "S").charAt(0).toUpperCase(),
-      avatarUrl: avatar || null,
-      oauth: { [provider]: String(providerId) },
-      streak: 1, xp: 0, level: 1,
-      lastLogin: new Date().toDateString(),
-      createdAt: new Date().toISOString(),
+      id:          uuidv4(),
+      name:        name || "StudyMate User",
+      email:       email || null,
+      password:    null,
+      avatar:      (name || "S").charAt(0).toUpperCase(),
+      avatar_url:  avatar || null,
+      oauth:       { [provider]: String(providerId) },
+      streak:      1, xp: 0, level: 1,
+      last_login:  new Date().toDateString(),
+      created_at:  new Date().toISOString(),
     };
+    store.users.push(user);
   }
-  return await userStore.save(user);
+
+  await store.saveUser(user);
+  return user;
 }
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -46,13 +52,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     callbackURL:  `${BASE_URL}/api/auth/google/callback`,
   }, async (_at, _rt, profile, done) => {
     try {
-      const user = await upsertOAuthUser({
+      done(null, await upsertOAuthUser({
         provider: "google", providerId: profile.id,
         name: profile.displayName,
         email: profile.emails?.[0]?.value,
         avatar: profile.photos?.[0]?.value,
-      });
-      done(null, user);
+      }));
     } catch (err) { done(err); }
   }));
   console.log("[passport] ✅ Google ready");
@@ -67,12 +72,11 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
   }, async (_at, _rt, profile, done) => {
     try {
       const email = profile.emails?.find(e => e.primary)?.value || profile.emails?.[0]?.value;
-      const user = await upsertOAuthUser({
+      done(null, await upsertOAuthUser({
         provider: "github", providerId: String(profile.id),
         name: profile.displayName || profile.username,
         email, avatar: profile.photos?.[0]?.value,
-      });
-      done(null, user);
+      }));
     } catch (err) { done(err); }
   }));
   console.log("[passport] ✅ GitHub ready");
@@ -90,12 +94,11 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
       const avatarUrl = profile.avatar
         ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`
         : null;
-      const user = await upsertOAuthUser({
+      done(null, await upsertOAuthUser({
         provider: "discord", providerId: profile.id,
         name: profile.global_name || profile.username,
         email: profile.email, avatar: avatarUrl,
-      });
-      done(null, user);
+      }));
     } catch (err) { done(err); }
   }));
   console.log("[passport] ✅ Discord ready");

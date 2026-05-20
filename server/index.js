@@ -56,7 +56,7 @@ app.use("/api/quiz",  quizRoutes);
 app.use("/uploads",   express.static(uploadsDir));
 
 app.get("/healthz", (_req, res) =>
-  res.json({ ok: true, uptime: Math.round(process.uptime()), db: require("./utils/db").isConnected() ? "mongodb" : "memory", accounts: require("./utils/userStore").isSupabase() ? "supabase" : "memory" })
+  res.json({ ok: true, uptime: Math.round(process.uptime()), db: require("./utils/db").isConnected() ? "mongodb" : "memory" })
 );
 
 const clientDist = path.join(__dirname, "../client/dist");
@@ -69,12 +69,12 @@ setupSocketHandlers(io);
 
 async function start() {
   const dbOk = await connectDB();
-  if (dbOk) await store.loadFromMongo();
+  if (dbOk) await store.loadFromSupabase();
 
   const PORT = process.env.PORT || 3001;
   server.listen(PORT, () => {
     console.log(`\n✅  StudyMate on :${PORT}  [${process.env.NODE_ENV || "development"}]`);
-    console.log(`    Database:    ${dbOk ? "✅ MongoDB (permanent)" : "⚠️  Memory only (accounts lost on restart — add MONGODB_URI)"}`);
+    console.log(`    Database:    ${dbOk ? "✅ Supabase (permanent)" : "⚠️  Memory only (accounts lost on restart — add SUPABASE_URL)"}`);
     console.log(`    BASE_URL:    ${process.env.BASE_URL   || "http://localhost:" + PORT}`);
     console.log(`    CLIENT_URL:  ${process.env.CLIENT_URL || "http://localhost:5173"}`);
     console.log(`    Google:      ${process.env.GOOGLE_CLIENT_ID  ? "✅" : "❌ not set"}`);

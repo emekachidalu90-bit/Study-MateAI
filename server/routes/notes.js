@@ -43,8 +43,8 @@ async function extractText(filePath, originalname) {
         let text = "";
         zip.getEntries().forEach(e => {
           if (/ppt\/slides\/slide\d+\.xml/.test(e.entryName)) {
-            const matches = e.getData().toString("utf8").match(/<a:t>(.*?)<\/a:t>/g) || [];
-            matches.forEach(m => { text += m.replace(/<[^>]*>/g, "") + " "; });
+            (e.getData().toString("utf8").match(/<a:t>(.*?)<\/a:t>/g) || [])
+              .forEach(m => { text += m.replace(/<[^>]*>/g, "") + " "; });
           }
         });
         return text || "Presentation uploaded — limited text extraction.";
@@ -67,20 +67,26 @@ router.post("/upload", auth, upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const content = await extractText(req.file.path, req.file.originalname);
     const note = {
-      id: uuidv4(), userId: req.user.id,
+      id: uuidv4(), user_id: req.user.id,
       title: req.body.title || req.file.originalname.replace(/\.[^.]+$/, ""),
-      content, filePath: req.file.filename,
-      originalName: req.file.originalname,
+      content, file_path: req.file.filename,
+      original_name: req.file.originalname,
       mimetype: req.file.mimetype, size: req.file.size,
       type: "file",
       tags: req.body.tags ? req.body.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
       summary: "", flashcards: [],
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     store.notes.push(note);
-    await store.save();
+    await store.saveNote(note);
+
+    // Update user XP
     const user = store.users.find(u => u.id === req.user.id);
-    if (user) { user.xp = (user.xp || 0) + 10; user.level = Math.floor(user.xp / 100) + 1; await store.save(); }
+    if (user) {
+      user.xp = (user.xp || 0) + 10;
+      user.level = Math.floor(user.xp / 100) + 1;
+      await store.saveUser(user);
+    }
     res.json(note);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -91,26 +97,31 @@ router.post("/", auth, async (req, res) => {
     const { title, content, tags } = req.body;
     if (!title || !content) return res.status(400).json({ error: "Title and content required" });
     const note = {
-      id: uuidv4(), userId: req.user.id, title, content, type: "text",
+      id: uuidv4(), user_id: req.user.id, title, content, type: "text",
       tags: tags || [], summary: "", flashcards: [],
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     store.notes.push(note);
-    await store.save();
+    await store.saveNote(note);
+
     const user = store.users.find(u => u.id === req.user.id);
-    if (user) { user.xp = (user.xp || 0) + 5; user.level = Math.floor(user.xp / 100) + 1; await store.save(); }
+    if (user) {
+      user.xp = (user.xp || 0) + 5;
+      user.level = Math.floor(user.xp / 100) + 1;
+      await store.saveUser(user);
+    }
     res.json(note);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Get all notes ──
+// ── Get all user notes ──
 router.get("/", auth, (req, res) => {
-  res.json(store.notes.filter(n => n.userId === req.user.id));
+  res.json(store.notes.filter(n => n.user_id === req.user.id));
 });
 
 // ── Get single note ──
 router.get("/:id", auth, (req, res) => {
-  const note = store.notes.find(n => n.id === req.params.id && n.userId === req.user.id);
+  const note = store.notes.find(n => n.id === req.params.id && n.user_id === req.user.id);
   if (!note) return res.status(404).json({ error: "Note not found" });
   res.json(note);
 });
@@ -118,10 +129,10 @@ router.get("/:id", auth, (req, res) => {
 // ── Update note ──
 router.put("/:id", auth, async (req, res) => {
   try {
-    const idx = store.notes.findIndex(n => n.id === req.params.id && n.userId === req.user.id);
+    const idx = store.notes.findIndex(n => n.id === req.params.id && n.user_id === req.user.id);
     if (idx === -1) return res.status(404).json({ error: "Note not found" });
-    store.notes[idx] = { ...store.notes[idx], ...req.body, updatedAt: new Date().toISOString() };
-    await store.save();
+    store.notes[idx] = { ...store.notes[idx], ...req.body, updated_at: new Date().toISOString() };
+    await store.saveNote(store.notes[idx]);
     res.json(store.notes[idx]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -129,10 +140,10 @@ router.put("/:id", auth, async (req, res) => {
 // ── Delete note ──
 router.delete("/:id", auth, async (req, res) => {
   try {
-    const note = store.notes.find(n => n.id === req.params.id && n.userId === req.user.id);
+    const note = store.notes.find(n => n.id === req.params.id && n.user_id === req.user.id);
     if (!note) return res.status(404).json({ error: "Note not found" });
-    if (note.filePath) {
-      const fp = path.join(__dirname, "../uploads", note.filePath);
+    if (note.file_path) {
+      const fp = path.join(__dirname, "../uploads", note.file_path);
       if (fs.existsSync(fp)) fs.unlinkSync(fp);
     }
     await store.deleteNote(note.id);
