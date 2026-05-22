@@ -9,7 +9,7 @@ function getGroq() {
   return new Groq({ apiKey: process.env.GROQ_API_KEY });
 }
 
-async function groqChat(messages, model = "llama-3.1-8b-instant") {
+async function groqChat(messages, model = "llama3-8b-8192") {
   const groq = getGroq();
   const res = await groq.chat.completions.create({ model, messages, max_tokens: 2048, temperature: 0.3 });
   return res.choices[0]?.message?.content || "";

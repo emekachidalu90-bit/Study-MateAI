@@ -66,7 +66,6 @@ router.post("/login", async (req, res) => {
       user.last_login = today;
       await store.saveUser(user);
     }
-    console.log(`[auth] login: ${email}`);
     res.json({ token: mintToken(user), user: safeUser(user) });
   } catch (err) {
     console.error("[auth/login]", err);
@@ -90,26 +89,55 @@ router.get("/providers", (_req, res) => {
   });
 });
 
-// ── OAuth inline HTML handler ──
+// ── OAuth success: sends an HTML page that uses postMessage to talk to the opener ──
+// Works for both normal browser tabs AND installed PWAs because the popup
+// sends the token back to the parent window without navigating it.
 function oauthSuccess(req, res) {
   if (!req.user) {
     console.error("[oauth] req.user empty after callback");
-    return res.redirect(`${CLIENT_URL}/login?error=oauth_failed`);
+    return res.send(popupHtml(null, "Sign-in failed. Please try again."));
   }
   const token = mintToken(req.user);
   console.log(`[oauth] ✅ ${req.user.email || req.user.id}`);
-  res.send(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Signing in…</title></head>
-<body><script>
-try {
-  localStorage.setItem('sm_token', ${JSON.stringify(token)});
-  window.location.replace('/oauth/callback?ready=1');
-} catch(e) {
-  window.location.replace('/login?error=storage_blocked');
+  res.send(popupHtml(token, null));
 }
+
+function popupHtml(token, error) {
+  if (error) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Error</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:60px;background:#0F0F1A;color:#F0F0FF">
+<p style="font-size:1.1rem;color:#FF6363;margin-bottom:20px">⚠️ ${error}</p>
+<script>
+  if (window.opener) {
+    window.opener.postMessage({ type: 'OAUTH_ERROR', error: ${JSON.stringify(error)} }, '*');
+    setTimeout(() => window.close(), 2000);
+  } else {
+    window.location.replace('/login?error=oauth_failed');
+  }
 </script>
-<p style="font-family:sans-serif;text-align:center;margin-top:80px;color:#888">Signing you in…</p>
-</body></html>`);
+</body></html>`;
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Signing in…</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:60px;background:#0F0F1A;color:#F0F0FF">
+<div style="font-size:2rem;margin-bottom:16px">✅</div>
+<p style="font-size:1rem;color:#9090B8">Signing you in…</p>
+<script>
+  const token = ${JSON.stringify(token)};
+  try {
+    localStorage.setItem('sm_token', token);
+  } catch(e) {}
+
+  if (window.opener && !window.opener.closed) {
+    // Popup flow (PWA + browser) — send token to parent window
+    window.opener.postMessage({ type: 'OAUTH_SUCCESS', token }, '*');
+    setTimeout(() => window.close(), 500);
+  } else {
+    // Fallback: no opener (direct navigation) — redirect to callback page
+    window.location.replace('/oauth/callback?ready=1');
+  }
+</script>
+</body></html>`;
 }
 
 function oauthFail(provider) {
@@ -119,6 +147,7 @@ function oauthFail(provider) {
     })(req, res, next);
 }
 
+// ── Google ──
 router.get("/google", (req, res, next) => {
   if (!process.env.GOOGLE_CLIENT_ID)
     return res.redirect(`${CLIENT_URL}/login?error=google_not_configured`);
@@ -126,6 +155,7 @@ router.get("/google", (req, res, next) => {
 });
 router.get("/google/callback", oauthFail("google"), oauthSuccess);
 
+// ── GitHub ──
 router.get("/github", (req, res, next) => {
   if (!process.env.GITHUB_CLIENT_ID)
     return res.redirect(`${CLIENT_URL}/login?error=github_not_configured`);
@@ -133,6 +163,7 @@ router.get("/github", (req, res, next) => {
 });
 router.get("/github/callback", oauthFail("github"), oauthSuccess);
 
+// ── Discord ──
 router.get("/discord", (req, res, next) => {
   if (!process.env.DISCORD_CLIENT_ID)
     return res.redirect(`${CLIENT_URL}/login?error=discord_not_configured`);
