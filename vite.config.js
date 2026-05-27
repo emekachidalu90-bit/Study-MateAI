@@ -1,0 +1,27 @@
+{
+  "name": "studymate-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "socket.io-client": "^4.7.4",
+    "axios": "^1.6.8",
+    "react-hot-toast": "^2.4.1",
+    "lucide-react": "^0.363.0",
+    "react-dropzone": "^14.2.3",
+    "react-markdown": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.2.0",
+    "vite-plugin-pwa": "^0.19.8"
+  }
+}
