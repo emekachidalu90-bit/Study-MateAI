@@ -5,17 +5,6 @@ import api from "../utils/api";
 import toast from "react-hot-toast";
 import { BookOpen, AlertCircle } from "lucide-react";
 
-/**
- * This page handles two scenarios:
- *
- * 1. POPUP flow (normal) — the popup's postMessage already delivered the token
- *    to the parent window. This page is only briefly visible inside the popup
- *    before it auto-closes. Nothing to do here except show a spinner.
- *
- * 2. FALLBACK / DIRECT flow — user navigated here directly (no opener).
- *    Read the token from localStorage (set by the server's inline HTML),
- *    call /auth/me, and redirect to dashboard.
- */
 export default function OAuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -27,36 +16,41 @@ export default function OAuthCallback() {
     const err   = searchParams.get("error");
 
     const ERROR_MSGS = {
-      google_failed:          "Google sign-in failed. Please try again.",
-      github_failed:          "GitHub sign-in failed. Please try again.",
-      discord_failed:         "Discord sign-in failed. Please try again.",
-      oauth_failed:           "Social sign-in failed. Please try again.",
-      google_not_configured:  "Google sign-in isn't set up on this server.",
-      storage_blocked:        "Browser blocked session storage — check privacy settings.",
+      google_failed:         "Google sign-in failed. Please try again.",
+      github_failed:         "GitHub sign-in failed. Please try again.",
+      discord_failed:        "Discord sign-in failed. Please try again.",
+      oauth_failed:          "Social sign-in failed. Please try again.",
+      google_not_configured: "Google sign-in isn't set up on this server.",
+      storage_blocked:       "Browser blocked session storage.",
     };
 
     // ── Error from server ──
     if (err) {
       const msg = ERROR_MSGS[err] || "Sign-in failed.";
-      // If we're in a popup, send error to parent and close
+      // If we are somehow inside a popup, send to parent and close
       if (window.opener && !window.opener.closed) {
-        window.opener.postMessage({ type: "OAUTH_ERROR", error: msg }, "*");
+        try { window.opener.postMessage({ type:"OAUTH_ERROR", error:msg }, "*"); } catch(e){}
         window.close();
         return;
       }
+      try {
+        const bc = new BroadcastChannel("sm_oauth");
+        bc.postMessage({ type:"OAUTH_ERROR", error:msg });
+        bc.close();
+      } catch(e){}
       setError(msg);
       setTimeout(() => navigate("/login"), 3000);
       return;
     }
 
-    // ── Popup flow: if we have an opener, the postMessage was already sent ──
-    // by the server's inline HTML. Just close this popup window.
+    // ── Popup flow: popup is still open with an opener — just close it ──
+    // The postMessage was already sent from the server's popup HTML page
     if (window.opener && !window.opener.closed) {
       window.close();
       return;
     }
 
-    // ── Fallback / direct navigation: no opener ──
+    // ── Fallback: direct navigation (popup was blocked / tab redirect) ──
     if (ready === "1") {
       const token = localStorage.getItem("sm_token");
       if (!token) {
@@ -64,13 +58,16 @@ export default function OAuthCallback() {
         setTimeout(() => navigate("/login"), 3000);
         return;
       }
+      // Set header BEFORE calling refreshUser
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       refreshUser()
         .then(user => {
           if (user) {
             toast.success(`Welcome${user.name ? `, ${user.name.split(" ")[0]}` : ""}! 🎉`);
             navigate("/dashboard", { replace: true });
-          } else throw new Error("no user");
+          } else {
+            throw new Error("no user");
+          }
         })
         .catch(() => {
           localStorage.removeItem("sm_token");
@@ -81,9 +78,8 @@ export default function OAuthCallback() {
       return;
     }
 
-    // ── Nothing matched ──
-    setError("Unexpected sign-in state. Please try again.");
-    setTimeout(() => navigate("/login"), 3000);
+    // Nothing matched — just go to login
+    navigate("/login", { replace: true });
   }, []);
 
   if (error) return (
@@ -91,7 +87,7 @@ export default function OAuthCallback() {
       <div style={{ width:60, height:60, background:"rgba(255,99,99,0.1)", border:"1px solid rgba(255,99,99,0.2)", borderRadius:18, display:"flex", alignItems:"center", justifyContent:"center" }}>
         <AlertCircle size={30} color="#FF6363"/>
       </div>
-      <h2 style={{ fontWeight:800, color:"#FF6363", fontSize:"1.2rem" }}>Sign-in Failed</h2>
+      <h2 style={{ fontWeight:800, color:"#FF6363" }}>Sign-in Failed</h2>
       <p style={{ color:"var(--text-secondary)", textAlign:"center", maxWidth:320, lineHeight:1.6 }}>{error}</p>
       <p style={{ color:"var(--text-muted)", fontSize:"0.82rem" }}>Redirecting to login…</p>
     </div>
