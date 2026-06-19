@@ -13,7 +13,7 @@ const FEATURES = [
   { icon:Brain,    color:"var(--accent-2)", title:"AI Flashcards",    desc:"Auto-generate flip-card study sets from any document with one click." },
   { icon:Zap,      color:"var(--accent-4)", title:"Solo Quiz",        desc:"Test yourself with AI-generated quizzes from your notes. Track progress." },
   { icon:Users,    color:"var(--accent-3)", title:"Multiplayer Quiz", desc:"Host live quiz battles — just like Kahoot but powered by your own notes." },
-  { icon:Sparkles, color:"var(--accent-5)", title:"AI Tutor",         desc:"Chat with your personal AI tutor 24/7. Ask anything, get clear explanations." },
+  { icon:Sparkles, color:"var(--accent-5)", title:"AI Voice Tutor",   desc:"Talk to your AI tutor out loud — speak your question, hear the answer." },
   { icon:Trophy,   color:"var(--accent-2)", title:"Leaderboard",      desc:"Earn XP, level up, unlock achievements, and compete globally." },
 ];
 
@@ -25,18 +25,16 @@ const SOCIAL = [
 
 export default function Landing() {
   const [providers, setProviders] = useState({ google:false, github:false, discord:false });
-  const { loadingProvider, handleOAuth } = useOAuthLogin();
+  const { handleOAuth } = useOAuthLogin();
 
   useEffect(() => {
     api.get("/auth/providers").then(r => setProviders(r.data)).catch(() => {});
   }, []);
 
   const social = SOCIAL.filter(s => providers[s.key]);
-  const busy   = !!loadingProvider;
 
   return (
     <div style={{ minHeight:"100vh", background:"var(--bg-primary)", overflowX:"hidden" }}>
-      {/* Nav */}
       <nav style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"16px 32px", borderBottom:"1px solid var(--border-light)", position:"sticky", top:0, background:"rgba(15,15,26,0.92)", backdropFilter:"blur(20px)", zIndex:50 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:34, height:34, background:"linear-gradient(135deg,var(--accent),var(--accent-2))", borderRadius:9, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -50,7 +48,6 @@ export default function Landing() {
         </div>
       </nav>
 
-      {/* Hero */}
       <section style={{ textAlign:"center", padding:"100px 24px 80px", position:"relative" }}>
         <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", width:600, height:600, background:"radial-gradient(circle,rgba(108,99,255,0.1) 0%,transparent 70%)", pointerEvents:"none" }}/>
         <div className="animate-fade">
@@ -62,14 +59,12 @@ export default function Landing() {
             Study Smarter with<br/><span className="gradient-text">AI That Gets You</span>
           </h1>
           <p style={{ fontSize:"1.1rem", color:"var(--text-secondary)", maxWidth:520, margin:"0 auto 40px", lineHeight:1.7 }}>
-            Upload your notes, generate flashcards, quiz yourself or battle friends live. Your personal AI tutor never sleeps.
+            Upload notes, generate flashcards, quiz friends live, and talk to your AI tutor by voice.
           </p>
-
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap", marginBottom: social.length ? 28 : 0 }}>
-            <Link to="/register" className="btn btn-primary   btn-lg">Start Studying Free <ChevronRight size={18}/></Link>
+            <Link to="/register"  className="btn btn-primary   btn-lg">Start Studying Free <ChevronRight size={18}/></Link>
             <Link to="/quiz/join" className="btn btn-secondary btn-lg"><Users size={18}/> Join a Quiz</Link>
           </div>
-
           {social.length > 0 && (
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:10, justifyContent:"center", marginBottom:14 }}>
@@ -79,11 +74,11 @@ export default function Landing() {
               </div>
               <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
                 {social.map(({ key, Icon, label, bg, color, border }) => (
-                  <button key={key} onClick={() => handleOAuth(key)} disabled={busy}
-                    style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 18px", background:bg, color, border:`1.5px solid ${border}`, borderRadius:"var(--radius-sm)", fontFamily:"var(--font)", fontSize:"0.85rem", fontWeight:600, cursor:busy?"not-allowed":"pointer", transition:"all 0.18s", boxShadow:"0 2px 8px rgba(0,0,0,0.2)", opacity:busy&&loadingProvider!==key?0.55:1 }}
-                    onMouseEnter={e => { if (!busy) { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.3)"; }}}
+                  <button key={key} onClick={() => handleOAuth(key)}
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 18px", background:bg, color, border:`1.5px solid ${border}`, borderRadius:"var(--radius-sm)", fontFamily:"var(--font)", fontSize:"0.85rem", fontWeight:600, cursor:"pointer", transition:"all 0.18s", boxShadow:"0 2px 8px rgba(0,0,0,0.2)" }}
+                    onMouseEnter={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.3)"; }}
                     onMouseLeave={e => { e.currentTarget.style.transform=""; e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.2)"; }}>
-                    <Icon/>{loadingProvider===key ? "Signing in…" : label}
+                    <Icon/>{label}
                   </button>
                 ))}
               </div>
@@ -92,7 +87,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Features */}
       <section style={{ padding:"0 24px 80px" }}>
         <div style={{ maxWidth:1100, margin:"0 auto" }}>
           <h2 style={{ textAlign:"center", fontSize:"2rem", fontWeight:800, marginBottom:8 }}>Everything you need to ace exams</h2>
@@ -111,10 +105,9 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* CTA */}
       <section style={{ padding:"80px 24px", textAlign:"center", background:"var(--bg-secondary)", borderTop:"1px solid var(--border-light)" }}>
         <h2 style={{ fontSize:"2rem", fontWeight:800, marginBottom:16 }}>Ready to study smarter?</h2>
-        <p style={{ color:"var(--text-secondary)", marginBottom:32 }}>Free forever · No credit card needed · PWA installable</p>
+        <p style={{ color:"var(--text-secondary)", marginBottom:32 }}>Free forever · No credit card · PWA installable</p>
         <Link to="/register" className="btn btn-primary btn-lg">Create Free Account <ChevronRight size={18}/></Link>
       </section>
 

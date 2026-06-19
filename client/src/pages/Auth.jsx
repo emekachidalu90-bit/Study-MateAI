@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 import toast from "react-hot-toast";
-import { BookOpen, Eye, EyeOff, Mail, Lock, User, ArrowLeft, Loader } from "lucide-react";
+import { BookOpen, Eye, EyeOff, Mail, Lock, User, ArrowLeft } from "lucide-react";
 
 const GoogleIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>;
 const GitHubIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>;
@@ -16,112 +16,25 @@ const PROVIDERS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Shared hook — used by both Auth page and Landing page
-// Handles popup + postMessage + BroadcastChannel
+// useOAuthLogin — SIMPLE version, no popup, no postMessage.
+// Just navigates the current window/tab/PWA to the OAuth route.
+// Google redirects back through the SAME window, lands on
+// /oauth/callback#token=XXXX, which finishes the login.
+//
+// This is the ONLY approach that behaves identically in a
+// normal browser tab and an installed PWA — there's no second
+// window for the PWA to lose track of.
 // ─────────────────────────────────────────────────────────────
 export function useOAuthLogin() {
-  const { refreshUser } = useAuth();
-  const navigate = useNavigate();
-  const [loadingProvider, setLoadingProvider] = useState(null);
-  const cleanupRef = useRef(null);
-
-  // Clean up on unmount
-  useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
-
   const handleOAuth = (provider) => {
-    if (loadingProvider) return;
-    setLoadingProvider(provider);
-
-    // Clean up any previous attempt
-    if (cleanupRef.current) cleanupRef.current();
-
-    const done = async (token) => {
-      cleanup();
-      try {
-        // ⚠️ Must set header BEFORE calling refreshUser
-        localStorage.setItem("sm_token", token);
-        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-        const user = await refreshUser();
-        if (user) {
-          toast.success(`Welcome${user.name ? `, ${user.name.split(" ")[0]}` : ""}! 🎉`);
-          navigate("/dashboard");
-        } else {
-          throw new Error("no user returned");
-        }
-      } catch {
-        localStorage.removeItem("sm_token");
-        delete api.defaults.headers.common["Authorization"];
-        toast.error("Signed in but failed to load account. Please try again.");
-        setLoadingProvider(null);
-      }
-    };
-
-    const fail = (msg) => {
-      cleanup();
-      toast.error(msg || "Sign-in failed. Please try again.");
-    };
-
-    // ── Listener 1: window.postMessage (normal browser popup) ──
-    const onMessage = (event) => {
-      // Accept from same origin only
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === "OAUTH_SUCCESS") done(event.data.token);
-      else if (event.data?.type === "OAUTH_ERROR") fail(event.data.error);
-    };
-    window.addEventListener("message", onMessage);
-
-    // ── Listener 2: BroadcastChannel (PWA where opener = null) ──
-    let bc = null;
-    try {
-      bc = new BroadcastChannel("sm_oauth");
-      bc.onmessage = (event) => {
-        if (event.data?.type === "OAUTH_SUCCESS") done(event.data.token);
-        else if (event.data?.type === "OAUTH_ERROR") fail(event.data.error);
-      };
-    } catch(e) { /* BroadcastChannel not available */ }
-
-    let popup = null;
-    let pollTimer = null;
-
-    const cleanup = () => {
-      window.removeEventListener("message", onMessage);
-      if (bc)        { try { bc.close(); }           catch(e){} bc = null; }
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      setLoadingProvider(null);
-    };
-    cleanupRef.current = cleanup;
-
-    // Open the popup
-    const w = 520, h = 640;
-    const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
-    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
-    popup = window.open(
-      `/api/auth/${provider}`,
-      `sm_oauth_${provider}_${Date.now()}`,
-      `width=${w},height=${h},left=${left},top=${top},` +
-      `toolbar=no,menubar=no,location=no,status=no,scrollbars=yes,resizable=yes`
-    );
-
-    if (!popup || popup.closed) {
-      // Popup was blocked — fall back to full page redirect
-      cleanup();
-      toast("Popup blocked. Redirecting…", { icon: "ℹ️" });
-      setTimeout(() => { window.location.href = `/api/auth/${provider}`; }, 800);
-      return;
-    }
-
-    // Poll for popup closure (user closed without completing)
-    pollTimer = setInterval(() => {
-      if (popup.closed) cleanup();
-    }, 500);
+    // Remember where to return to after login completes
+    try { sessionStorage.setItem("sm_oauth_return", window.location.pathname); } catch(e) {}
+    window.location.href = `/api/auth/${provider}`;
   };
-
-  return { loadingProvider, handleOAuth };
+  // loadingProvider kept for API compatibility with old callers; always null here
+  return { loadingProvider: null, handleOAuth };
 }
 
-// ─────────────────────────────────────────────────────────────
-// Auth page
-// ─────────────────────────────────────────────────────────────
 export default function Auth({ mode }) {
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -130,7 +43,7 @@ export default function Auth({ mode }) {
   const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [providers, setProviders] = useState({ google:false, github:false, discord:false });
-  const { loadingProvider, handleOAuth } = useOAuthLogin();
+  const { handleOAuth } = useOAuthLogin();
   const isLogin = mode === "login";
 
   useEffect(() => {
@@ -143,7 +56,6 @@ export default function Auth({ mode }) {
         discord_failed:        "Discord sign-in failed. Please try again.",
         oauth_failed:          "Social sign-in failed. Please try again.",
         google_not_configured: "Google sign-in is not set up on this server.",
-        storage_blocked:       "Couldn't save your session — check browser privacy settings.",
       };
       toast.error(msgs[err] || "Sign-in failed.");
     }
@@ -157,8 +69,8 @@ export default function Auth({ mode }) {
         await login(form.email, form.password);
         toast.success("Welcome back! 👋");
       } else {
-        if (!form.name.trim())       { toast.error("Name is required");               setLoading(false); return; }
-        if (form.password.length < 6){ toast.error("Password must be 6+ characters"); setLoading(false); return; }
+        if (!form.name.trim())        { toast.error("Name is required");              setLoading(false); return; }
+        if (form.password.length < 6) { toast.error("Password must be 6+ characters"); setLoading(false); return; }
         await register(form.name, form.email, form.password);
         toast.success("Account created! 🚀");
       }
@@ -169,35 +81,24 @@ export default function Auth({ mode }) {
   };
 
   const enabled = PROVIDERS.filter(p => providers[p.key]);
-  const busy    = !!loadingProvider;
 
   return (
     <div style={{ minHeight:"100vh", display:"flex", background:"var(--bg-primary)", overflow:"hidden" }}>
-      {/* Ambient blobs */}
       <div style={{ position:"fixed", top:"-20%", right:"-10%", width:500, height:500, background:"radial-gradient(circle,rgba(108,99,255,0.1) 0%,transparent 70%)", pointerEvents:"none" }}/>
       <div style={{ position:"fixed", bottom:"-20%", left:"-10%", width:400, height:400, background:"radial-gradient(circle,rgba(255,107,157,0.07) 0%,transparent 70%)", pointerEvents:"none" }}/>
 
-      {/* Left feature panel — desktop only */}
       <div className="hide-mobile" style={{ width:"42%", minHeight:"100vh", background:"linear-gradient(145deg,rgba(108,99,255,0.1),rgba(255,107,157,0.05))", borderRight:"1px solid var(--border-light)", display:"flex", flexDirection:"column", justifyContent:"center", padding:"48px 56px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:36 }}>
           <div style={{ width:44, height:44, background:"linear-gradient(135deg,var(--accent),var(--accent-2))", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <BookOpen size={24} color="white"/>
           </div>
-          <span style={{ fontWeight:800, fontSize:"1.3rem" }}>Study<span style={{ color:"var(--accent)" }}>Mate</span> <span style={{ color:"var(--text-muted)", fontWeight:400, fontSize:"0.85rem" }}>AI</span></span>
+          <span style={{ fontWeight:800, fontSize:"1.3rem" }}>Study<span style={{ color:"var(--accent)" }}>Mate</span></span>
         </div>
-        <h2 style={{ fontSize:"2rem", fontWeight:800, lineHeight:1.25, marginBottom:16 }}>
-          Your AI-powered<br/><span className="gradient-text">study companion</span>
-        </h2>
+        <h2 style={{ fontSize:"2rem", fontWeight:800, lineHeight:1.25, marginBottom:16 }}>Your AI-powered<br/><span className="gradient-text">study companion</span></h2>
         <p style={{ color:"var(--text-secondary)", lineHeight:1.7, fontSize:"0.95rem", marginBottom:28 }}>
           Upload notes, generate flashcards, quiz your friends live, and chat with an AI tutor.
         </p>
-        {[
-          ["📄","Upload PDF, PPTX, DOCX, Excel, TXT"],
-          ["🃏","AI flashcards & summaries in one click"],
-          ["🎮","Live multiplayer quizzes like Kahoot"],
-          ["🤖","Chat with your personal AI study tutor"],
-          ["🏆","Earn XP, level up, climb the leaderboard"],
-        ].map(([e,t]) => (
+        {[["📄","Upload PDF, PPTX, DOCX, Excel, TXT"],["🃏","AI flashcards & summaries instantly"],["🎮","Live multiplayer quizzes like Kahoot"],["🤖","Personal AI study tutor 24/7"],["🏆","XP, levels, leaderboard"]].map(([e,t]) => (
           <div key={t} style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 14px", background:"rgba(255,255,255,0.03)", borderRadius:10, border:"1px solid var(--border-light)", marginBottom:8 }}>
             <span style={{ fontSize:"1.1rem", flexShrink:0 }}>{e}</span>
             <span style={{ color:"var(--text-secondary)", fontSize:"0.87rem" }}>{t}</span>
@@ -205,13 +106,11 @@ export default function Auth({ mode }) {
         ))}
       </div>
 
-      {/* Right form panel */}
       <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
         <div style={{ width:"100%", maxWidth:420 }} className="animate-fade">
           <Link to="/" style={{ display:"inline-flex", alignItems:"center", gap:6, color:"var(--text-secondary)", fontSize:"0.85rem", textDecoration:"none", marginBottom:32 }}>
             <ArrowLeft size={15}/> Back to home
           </Link>
-
           <h1 style={{ fontWeight:800, fontSize:"1.6rem", marginBottom:4 }}>
             {isLogin ? "Welcome back 👋" : "Create your account"}
           </h1>
@@ -219,18 +118,15 @@ export default function Auth({ mode }) {
             {isLogin ? "Sign in to continue your study streak" : "Join thousands of students studying smarter"}
           </p>
 
-          {/* Social buttons */}
           {enabled.length > 0 && (
             <>
               <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
                 {enabled.map(({ key, label, Icon, bg, color, border }) => (
-                  <button key={key} onClick={() => handleOAuth(key)} disabled={busy}
-                    style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%", padding:"12px 20px", background:bg, color, border:`1.5px solid ${border}`, borderRadius:"var(--radius-sm)", fontFamily:"var(--font)", fontSize:"0.9rem", fontWeight:600, cursor:busy?"not-allowed":"pointer", transition:"all 0.18s", boxShadow:"0 2px 8px rgba(0,0,0,0.15)", opacity:busy&&loadingProvider!==key?0.55:1 }}
-                    onMouseEnter={e => { if (!busy) { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.25)"; }}}
+                  <button key={key} onClick={() => handleOAuth(key)}
+                    style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, width:"100%", padding:"12px 20px", background:bg, color, border:`1.5px solid ${border}`, borderRadius:"var(--radius-sm)", fontFamily:"var(--font)", fontSize:"0.9rem", fontWeight:600, cursor:"pointer", transition:"all 0.18s", boxShadow:"0 2px 8px rgba(0,0,0,0.15)" }}
+                    onMouseEnter={e => { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.25)"; }}
                     onMouseLeave={e => { e.currentTarget.style.transform=""; e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.15)"; }}>
-                    {loadingProvider === key
-                      ? <><Loader size={16} className="animate-spin"/> Waiting for {label}…</>
-                      : <><Icon/> Continue with {label}</>}
+                    <Icon/> Continue with {label}
                   </button>
                 ))}
               </div>
@@ -242,15 +138,13 @@ export default function Auth({ mode }) {
             </>
           )}
 
-          {/* Email / password form */}
           <form onSubmit={handleSubmit} style={{ display:"flex", flexDirection:"column", gap:14 }}>
             {!isLogin && (
               <div>
                 <label className="label">Full Name</label>
                 <div style={{ position:"relative" }}>
                   <User size={15} style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", color:"var(--text-muted)", pointerEvents:"none" }}/>
-                  <input className="input" style={{ paddingLeft:40 }} type="text" placeholder="Your full name"
-                    value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} required/>
+                  <input className="input" style={{ paddingLeft:40 }} type="text" placeholder="Your full name" value={form.name} onChange={e => setForm(p => ({...p, name:e.target.value}))} required/>
                 </div>
               </div>
             )}
@@ -258,38 +152,29 @@ export default function Auth({ mode }) {
               <label className="label">Email</label>
               <div style={{ position:"relative" }}>
                 <Mail size={15} style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", color:"var(--text-muted)", pointerEvents:"none" }}/>
-                <input className="input" style={{ paddingLeft:40 }} type="email" placeholder="you@example.com"
-                  value={form.email} onChange={e => setForm(p => ({...p, email:e.target.value}))} required/>
+                <input className="input" style={{ paddingLeft:40 }} type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm(p => ({...p, email:e.target.value}))} required/>
               </div>
             </div>
             <div>
               <label className="label">Password</label>
               <div style={{ position:"relative" }}>
                 <Lock size={15} style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", color:"var(--text-muted)", pointerEvents:"none" }}/>
-                <input className="input" style={{ paddingLeft:40, paddingRight:44 }} type={showPass?"text":"password"}
-                  placeholder={isLogin?"Your password":"Min. 6 characters"}
-                  value={form.password} onChange={e => setForm(p => ({...p, password:e.target.value}))} required/>
-                <button type="button" onClick={() => setShowPass(p => !p)}
-                  style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"var(--text-muted)", display:"flex", padding:4 }}>
+                <input className="input" style={{ paddingLeft:40, paddingRight:44 }} type={showPass?"text":"password"} placeholder={isLogin?"Your password":"Min. 6 characters"} value={form.password} onChange={e => setForm(p => ({...p, password:e.target.value}))} required/>
+                <button type="button" onClick={() => setShowPass(p => !p)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"var(--text-muted)", display:"flex", padding:4 }}>
                   {showPass ? <EyeOff size={15}/> : <Eye size={15}/>}
                 </button>
               </div>
             </div>
-            <button type="submit" className="btn btn-primary btn-lg" style={{ marginTop:4 }} disabled={loading || busy}>
-              {loading
-                ? <span style={{ width:18, height:18, border:"2px solid rgba(255,255,255,0.3)", borderTopColor:"white", borderRadius:"50%", display:"inline-block", animation:"spin 0.7s linear infinite" }}/>
-                : isLogin ? "Sign In →" : "Create Account 🎉"}
+            <button type="submit" className="btn btn-primary btn-lg" style={{ marginTop:4 }} disabled={loading}>
+              {loading ? <span style={{ width:18, height:18, border:"2px solid rgba(255,255,255,0.3)", borderTopColor:"white", borderRadius:"50%", display:"inline-block", animation:"spin 0.7s linear infinite" }}/> : isLogin ? "Sign In →" : "Create Account 🎉"}
             </button>
           </form>
 
           <p style={{ textAlign:"center", color:"var(--text-secondary)", fontSize:"0.88rem", marginTop:20 }}>
-            {isLogin
-              ? <>Don't have an account? <Link to="/register" style={{ color:"var(--accent)", fontWeight:700, textDecoration:"none" }}>Sign up free</Link></>
-              : <>Already have an account? <Link to="/login" style={{ color:"var(--accent)", fontWeight:700, textDecoration:"none" }}>Sign in</Link></>}
+            {isLogin ? <>Don't have an account? <Link to="/register" style={{ color:"var(--accent)", fontWeight:700, textDecoration:"none" }}>Sign up free</Link></> : <>Already have an account? <Link to="/login" style={{ color:"var(--accent)", fontWeight:700, textDecoration:"none" }}>Sign in</Link></>}
           </p>
         </div>
       </div>
-
       <style>{`.hide-mobile{display:flex;flex-direction:column}@media(max-width:768px){.hide-mobile{display:none!important}}`}</style>
     </div>
   );

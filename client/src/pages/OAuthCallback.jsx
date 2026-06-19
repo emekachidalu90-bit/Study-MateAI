@@ -1,85 +1,82 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 import toast from "react-hot-toast";
 import { BookOpen, AlertCircle } from "lucide-react";
 
+/**
+ * Reads the OAuth result from the URL hash fragment:
+ *   /oauth/callback#token=XXXX     → success
+ *   /oauth/callback#error=XXXX     → failure
+ *
+ * Using the hash fragment (not query string) means the token
+ * never gets sent to any server in a subsequent request and
+ * never appears in server logs / referrer headers.
+ *
+ * This page works identically whether reached via a normal
+ * browser redirect or an installed PWA's redirect — there is
+ * only ever one window involved, so there's nothing to lose
+ * track of.
+ */
 export default function OAuthCallback() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const ready = searchParams.get("ready");
-    const err   = searchParams.get("error");
+    const hash = window.location.hash.replace(/^#/, "");
+    const params = new URLSearchParams(hash);
+    const token = params.get("token");
+    const err    = params.get("error");
 
     const ERROR_MSGS = {
-      google_failed:         "Google sign-in failed. Please try again.",
-      github_failed:         "GitHub sign-in failed. Please try again.",
-      discord_failed:        "Discord sign-in failed. Please try again.",
-      oauth_failed:          "Social sign-in failed. Please try again.",
-      google_not_configured: "Google sign-in isn't set up on this server.",
-      storage_blocked:       "Browser blocked session storage.",
+      google_failed:          "Google sign-in failed. Please try again.",
+      github_failed:          "GitHub sign-in failed. Please try again.",
+      discord_failed:         "Discord sign-in failed. Please try again.",
+      oauth_failed:           "Social sign-in failed. Please try again.",
+      google_not_configured:  "Google sign-in is not set up on this server.",
+      github_not_configured:  "GitHub sign-in is not set up on this server.",
+      discord_not_configured: "Discord sign-in is not set up on this server.",
     };
 
-    // ── Error from server ──
     if (err) {
-      const msg = ERROR_MSGS[err] || "Sign-in failed.";
-      // If we are somehow inside a popup, send to parent and close
-      if (window.opener && !window.opener.closed) {
-        try { window.opener.postMessage({ type:"OAUTH_ERROR", error:msg }, "*"); } catch(e){}
-        window.close();
-        return;
-      }
-      try {
-        const bc = new BroadcastChannel("sm_oauth");
-        bc.postMessage({ type:"OAUTH_ERROR", error:msg });
-        bc.close();
-      } catch(e){}
-      setError(msg);
-      setTimeout(() => navigate("/login"), 3000);
+      setError(ERROR_MSGS[err] || "Sign-in failed.");
+      setTimeout(() => navigate("/login", { replace: true }), 3000);
       return;
     }
 
-    // ── Popup flow: popup is still open with an opener — just close it ──
-    // The postMessage was already sent from the server's popup HTML page
-    if (window.opener && !window.opener.closed) {
-      window.close();
+    if (!token) {
+      setError("No sign-in data received. Please try again.");
+      setTimeout(() => navigate("/login", { replace: true }), 3000);
       return;
     }
 
-    // ── Fallback: direct navigation (popup was blocked / tab redirect) ──
-    if (ready === "1") {
-      const token = localStorage.getItem("sm_token");
-      if (!token) {
-        setError("Session token missing. Please try again.");
-        setTimeout(() => navigate("/login"), 3000);
-        return;
-      }
-      // Set header BEFORE calling refreshUser
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      refreshUser()
-        .then(user => {
-          if (user) {
-            toast.success(`Welcome${user.name ? `, ${user.name.split(" ")[0]}` : ""}! 🎉`);
-            navigate("/dashboard", { replace: true });
-          } else {
-            throw new Error("no user");
-          }
-        })
-        .catch(() => {
-          localStorage.removeItem("sm_token");
-          delete api.defaults.headers.common["Authorization"];
-          setError("Failed to load your account. Please try again.");
-          setTimeout(() => navigate("/login"), 3000);
-        });
-      return;
-    }
+    // Where to return to (saved before the redirect happened)
+    let returnPath = "/dashboard";
+    try {
+      returnPath = sessionStorage.getItem("sm_oauth_return") || "/dashboard";
+      sessionStorage.removeItem("sm_oauth_return");
+    } catch (e) {}
 
-    // Nothing matched — just go to login
-    navigate("/login", { replace: true });
+    localStorage.setItem("sm_token", token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+    refreshUser()
+      .then(user => {
+        if (user) {
+          toast.success(`Welcome${user.name ? `, ${user.name.split(" ")[0]}` : ""}! 🎉`);
+          navigate(returnPath === "/login" || returnPath === "/register" ? "/dashboard" : returnPath, { replace: true });
+        } else {
+          throw new Error("no user");
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("sm_token");
+        delete api.defaults.headers.common["Authorization"];
+        setError("Failed to load your account. Please try again.");
+        setTimeout(() => navigate("/login", { replace: true }), 3000);
+      });
   }, []);
 
   if (error) return (
