@@ -38,13 +38,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ─────────────────────────────────────────────────────────────
-// DEBUG: log every single request that hits the server.
-// Check Render logs after clicking the Google button — you
-// MUST see "[req] GET /api/auth/google" in there. If you don't
-// see it at all, the request never reached this server.
-// ─────────────────────────────────────────────────────────────
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   console.log(`[req] ${req.method} ${req.originalUrl}`);
   next();
 });
@@ -52,11 +46,9 @@ app.use((req, res, next) => {
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// ─────────────────────────────────────────────────────────────
-// CRITICAL: ALL /api/* ROUTES MUST BE REGISTERED BEFORE
-// THE CATCH-ALL THAT SERVES index.html. THIS ORDER IS
-// NON-NEGOTIABLE — Express matches routes top-to-bottom.
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// STEP 1 of 3: API ROUTES — registered FIRST, always win.
+// ═══════════════════════════════════════════════════════════════
 app.use("/api/auth",  authRoutes);
 app.use("/api/notes", notesRoutes);
 app.use("/api/ai",    aiRoutes);
@@ -67,17 +59,37 @@ app.get("/healthz", (_req, res) => {
   res.json({ ok: true, uptime: Math.round(process.uptime()), db: require("./utils/db").isConnected() ? "supabase" : "memory" });
 });
 
-// ── Serve built React app — STATIC FILES FIRST, CATCH-ALL LAST ──
+// ═══════════════════════════════════════════════════════════════
+// STEP 2 of 3: STATIC REACT BUILD FILES (JS, CSS, images etc.)
+// These are real files on disk — express.static only responds
+// to ones that actually exist, then calls next() otherwise.
+// ═══════════════════════════════════════════════════════════════
 const clientDist = path.join(__dirname, "../client/dist");
-if (fs.existsSync(clientDist)) {
+const hasClientBuild = fs.existsSync(clientDist);
+if (hasClientBuild) {
   app.use(express.static(clientDist));
-  // This catch-all MUST be the very last route registered.
-  // It only fires if nothing above matched — so /api/* routes
-  // and /uploads/* always take priority.
-  app.get("*", (_req, res) => res.sendFile(path.join(clientDist, "index.html")));
 } else {
   console.warn("⚠️  client/dist not found — did the build step run? (npm run build)");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 3 of 3: SPA CATCH-ALL — must be the absolute last route.
+//
+// EXPLICITLY refuses to handle anything starting with /api or
+// /uploads, even as a safety net in case something above this
+// line is ever reordered by mistake in the future. This line
+// is what was MISSING before, and is the actual root cause of
+// "/healthz" and "/api/auth/debug" returning index.html.
+// ═══════════════════════════════════════════════════════════════
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/") || req.path.startsWith("/uploads/")) {
+    return res.status(404).json({ error: "Not found", path: req.path });
+  }
+  if (!hasClientBuild) {
+    return res.status(503).send("Client build not found. Check Render build logs.");
+  }
+  res.sendFile(path.join(clientDist, "index.html"));
+});
 
 setupSocketHandlers(io);
 
@@ -87,12 +99,13 @@ async function start() {
   const PORT = process.env.PORT || 3001;
   server.listen(PORT, () => {
     console.log(`\n✅  StudyMate on :${PORT} [${process.env.NODE_ENV || "development"}]`);
-    console.log(`    DB:      ${dbOk ? "✅ Supabase" : "⚠️  Memory only"}`);
-    console.log(`    BASE_URL:   ${process.env.BASE_URL   || "(not set!)"}`);
-    console.log(`    CLIENT_URL: ${process.env.CLIENT_URL || "(not set!)"}`);
-    console.log(`    Google:  ${process.env.GOOGLE_CLIENT_ID  ? "✅" : "❌ not set"}`);
-    console.log(`    GitHub:  ${process.env.GITHUB_CLIENT_ID  ? "✅" : "❌ not set"}`);
-    console.log(`    Discord: ${process.env.DISCORD_CLIENT_ID ? "✅" : "❌ not set"}\n`);
+    console.log(`    Client build: ${hasClientBuild ? "✅ found" : "❌ MISSING"}`);
+    console.log(`    DB:           ${dbOk ? "✅ Supabase" : "⚠️  Memory only"}`);
+    console.log(`    BASE_URL:     ${process.env.BASE_URL   || "(not set!)"}`);
+    console.log(`    CLIENT_URL:   ${process.env.CLIENT_URL || "(not set!)"}`);
+    console.log(`    Google:       ${process.env.GOOGLE_CLIENT_ID  ? "✅" : "❌ not set"}`);
+    console.log(`    GitHub:       ${process.env.GITHUB_CLIENT_ID  ? "✅" : "❌ not set"}`);
+    console.log(`    Discord:      ${process.env.DISCORD_CLIENT_ID ? "✅" : "❌ not set"}\n`);
   });
 }
 start();

@@ -15,9 +15,7 @@ export function AuthProvider({ children }) {
         .then(r => setUser(r.data))
         .catch(() => { localStorage.removeItem("sm_token"); delete api.defaults.headers.common["Authorization"]; })
         .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    } else setLoading(false);
   }, []);
 
   const login = useCallback(async (email, password) => {
@@ -47,10 +45,34 @@ export function AuthProvider({ children }) {
     catch { return null; }
   }, []);
 
+  const updateProfile = useCallback(async (updates) => {
+    const { data } = await api.put("/auth/me", updates);
+    localStorage.setItem("sm_token", data.token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  const uploadAvatar = useCallback(async (file) => {
+    const fd = new FormData();
+    fd.append("avatar", file);
+    const { data } = await api.post("/auth/me/avatar", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    setUser(data.user);
+    return data.user;
+  }, []);
+
+  const removeAvatar = useCallback(async () => {
+    const { data } = await api.delete("/auth/me/avatar");
+    setUser(data.user);
+    return data.user;
+  }, []);
+
   const updateUser = useCallback((updates) => setUser(p => ({ ...p, ...updates })), []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, refreshUser, updateProfile, uploadAvatar, removeAvatar }}>
       {children}
     </AuthContext.Provider>
   );
